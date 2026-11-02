@@ -338,7 +338,9 @@ class CameraController(
      * `SENSOR_EXPOSURE_TIME` quand l'utilisateur choisit une pose longue.
      */
     @OptIn(ExperimentalCamera2Interop::class)
-    private fun applyExposureControls(builder: androidx.camera.core.ExtendableBuilder<androidx.camera.core.UseCase>) {
+    private fun <T : androidx.camera.core.UseCase> applyExposureControls(
+        builder: androidx.camera.core.ExtendableBuilder<T>
+    ) {
         runCatching {
             val extender = Camera2Interop.Extender(builder)
             val exposure = manualExposureNs

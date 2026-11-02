@@ -29,6 +29,9 @@ import androidx.camera.camera2.interop.ExperimentalCamera2Interop
 import androidx.core.content.ContextCompat
 import androidx.lifecycle.LifecycleOwner
 import android.hardware.camera2.CameraCharacteristics
+import android.hardware.camera2.CaptureRequest
+import android.hardware.camera2.CaptureResult
+import android.hardware.camera2.CameraCaptureSession
 import android.os.Build
 import android.os.Environment
 import java.io.File
@@ -99,6 +102,36 @@ class CameraController(
     /** Compensation d'exposition en cours (en « crans » EV), 0 = exposition automatique neutre. */
     var exposureSteps: Int = 0
         private set
+
+    /**
+     * Temps d'exposition imposé au capteur, en nanosecondes (null = exposition automatique).
+     * C'est LE levier pour la caméra selfie : contrairement à la compensation d'exposition,
+     * il autorise une pose longue (1/15 s, 1/8 s…) que le mode vidéo n'accorde pas seul.
+     */
+    var manualExposureNs: Long? = null
+        private set
+
+    /** Dernière exposition réellement appliquée par le capteur (lue dans les métadonnées). */
+    @Volatile
+    var liveExposureNs: Long = 0L
+        private set
+
+    /** Dernière sensibilité réellement appliquée (ISO). */
+    @Volatile
+    var liveIso: Int = 0
+        private set
+
+    /** Callback système qui remonte l'exposition effective image par image. */
+    private val exposureProbe = object : CameraCaptureSession.CaptureCallback() {
+        override fun onCaptureCompleted(
+            session: CameraCaptureSession,
+            request: CaptureRequest,
+            result: android.hardware.camera2.TotalCaptureResult
+        ) {
+            result.get(CaptureResult.SENSOR_EXPOSURE_TIME)?.let { liveExposureNs = it }
+            result.get(CaptureResult.SENSOR_SENSITIVITY)?.let { liveIso = it }
+        }
+    }
 
     /** Mémorise les paramètres de liaison pour pouvoir relier à nouveau (changement de FPS). */
     private data class BindRequest(
@@ -173,11 +206,12 @@ class CameraController(
             // bas pour la nuit. Un verrou à 30/30 (ou 24/24) laisse le capteur allonger
             // son temps d'exposition quand la scène est sombre.
             val fpsRange = pickFpsRange()
-            preview = Preview.Builder()
+            val previewBuilder = Preview.Builder()
                 .apply { if (fpsRange != null) setTargetFrameRate(fpsRange) }
-                .build().also {
-                    it.surfaceProvider = previewView.surfaceProvider
-                }
+            applyExposureControls(previewBuilder)
+            preview = previewBuilder.build().also {
+                it.surfaceProvider = previewView.surfaceProvider
+            }
 
             // En basse lumière on descend en 720p : moins de pixels = exposition plus longue
             // = image sensiblement plus lumineuse. Sinon FHD avec repli automatique.
@@ -193,10 +227,11 @@ class CameraController(
             // mais CameraX n'enregistre PAS le miroir par défaut → la vidéo finale était
             // inversée par rapport à ce que l'utilisateur voyait pendant le tournage.
             // MIRROR_MODE_ON_FRONT_ONLY aligne le fichier sur l'aperçu (recommandation Google).
-            videoCapture = VideoCapture.Builder(recorder)
+            val videoBuilder = VideoCapture.Builder(recorder)
                 .setMirrorMode(MirrorMode.MIRROR_MODE_ON_FRONT_ONLY)
                 .apply { if (fpsRange != null) setTargetFrameRate(fpsRange) }
-                .build()
+            applyExposureControls(videoBuilder)
+            videoCapture = videoBuilder.build()
 
             // PreviewView applique déjà le miroir de la caméra frontale : on ne le retourne
             // plus manuellement, sinon l'aperçu et la vidéo repartaient en sens opposés.
@@ -290,7 +325,73 @@ class CameraController(
         }.getOrNull()
     }
 
-    /** Pousse l'exposition à son maximum matériel (dernier recours, image très bruitée). */
+    // --------------------------------- Exposition manuelle du capteur (selfie)
+
+    /**
+     * Applique (ou retire) le contrôle d'exposition manuel sur les cas d'usage CameraX.
+     *
+     * Pourquoi c'est nécessaire : en mode vidéo, l'exposition automatique de CameraX choisit un
+     * temps de pose court (≈ 1/30 s) pour tenir les 30 images/seconde. L'application photo du
+     * téléphone, elle, utilise le mode photo et peut poser 1/8 s. C'est exactement l'écart de
+     * luminosité constaté. On désactive donc l'AE (`CONTROL_AE_MODE_OFF`) et on impose
+     * `SENSOR_EXPOSURE_TIME` quand l'utilisateur choisit une pose longue.
+     */
+    @OptIn(ExperimentalCamera2Interop::class)
+    private fun applyExposureControls(builder: androidx.camera.core.ExtendableBuilder<*>) {
+        runCatching {
+            val extender = Camera2Interop.Extender(builder)
+            val exposure = manualExposureNs
+            if (exposure != null) {
+                extender.setCaptureRequestOption(
+                    CaptureRequest.CONTROL_AE_MODE,
+                    CaptureRequest.CONTROL_AE_MODE_OFF
+                )
+                extender.setCaptureRequestOption(CaptureRequest.SENSOR_EXPOSURE_TIME, exposure)
+                // Le capteur doit pouvoir « prendre son temps » : on relâche aussi la cadence.
+                extender.setCaptureRequestOption(CaptureRequest.SENSOR_FRAME_DURATION, exposure)
+            } else {
+                extender.setCaptureRequestOption(
+                    CaptureRequest.CONTROL_AE_MODE,
+                    CaptureRequest.CONTROL_AE_MODE_ON
+                )
+            }
+            // Remontée de l'exposition réelle (affichée dans le studio).
+            extender.setSessionCaptureCallback(exposureProbe)
+        }.onFailure { Log.w(TAG, "Contrôle d'exposition indisponible : ${it.message}") }
+    }
+
+    /** Plage d'exposition supportée par le capteur courant, en nanosecondes. */
+    @OptIn(ExperimentalCamera2Interop::class)
+    fun sensorExposureRangeNs(): LongRange? = runCatching {
+        val provider = cameraProvider ?: return@runCatching null
+        val selector = CameraSelector.Builder().requireLensFacing(lensFacing).build()
+        val info = provider.getCameraInfo(selector) ?: return@runCatching null
+        val range = Camera2CameraInfo.from(info)
+            .getCameraCharacteristic(CameraCharacteristics.SENSOR_INFO_EXPOSURE_TIME_RANGE)
+            ?: return@runCatching null
+        range.lower..range.upper
+    }.getOrNull()
+
+    /**
+     * Fixe une pose manuelle. [ns] = null → retour à l'exposition automatique.
+     * La liaison caméra est refaite, donc à appeler hors enregistrement.
+     * @return la valeur appliquée (null si retour en auto ou si refusé).
+     */
+    fun setManualExposureNs(ns: Long?, onEvent: (CameraEvent) -> Unit = {}): Long? {
+        if (recordingState == RecordingState.RECORDING || recordingState == RecordingState.PAUSED) {
+            onEvent(CameraEvent.Info("Impossible de changer l'exposition pendant l'enregistrement."))
+            return manualExposureNs
+        }
+        val allowed = sensorExposureRangeNs()
+        val target = when {
+            ns == null -> null
+            allowed == null -> ns
+            else -> ns.coerceIn(allowed)
+        }
+        manualExposureNs = target
+        lastBind?.let { bindInternal(it.previewView, it.mirrorPreview, it.onEvent) }
+        return target
+    }
     fun maxExposureCompensation(): Int? = setExposureCompensation(exposureIndexRange().last)
 
     private fun applyExposureLock(steps: Int) {

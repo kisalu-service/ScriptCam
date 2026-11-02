@@ -10,6 +10,7 @@ import android.view.WindowManager
 import androidx.activity.compose.rememberLauncherForActivityResult
 import androidx.activity.result.contract.ActivityResultContracts
 import androidx.camera.view.PreviewView
+import androidx.camera.core.CameraSelector
 import androidx.compose.animation.AnimatedVisibility
 import androidx.compose.animation.fadeIn
 import androidx.compose.animation.fadeOut
@@ -206,6 +207,11 @@ fun StudioScreen(
     /** Intensité de la lampe d'appoint frontale (0 = éteinte). */
     var fillLightLevel by remember { mutableStateOf(0) }
     var frontDiagnostics by remember { mutableStateOf<String?>(null) }
+    /** Pose imposée au capteur en millisecondes (0 = exposition automatique). */
+    var exposureMs by remember { mutableStateOf(0) }
+    var liveExposureMs by remember { mutableStateOf(0) }
+    var liveIso by remember { mutableStateOf(0) }
+    var isFrontCamera by remember { mutableStateOf(session.useFrontCamera) }
 
     // Mode basse lumière : mémorisé pour la liaison, et appliqué même s'il change à chaud.
     LaunchedEffect(settings.lowLightMode) {
@@ -245,6 +251,7 @@ fun StudioScreen(
             hasFlash = cameraController.hasTorch()
             torchOn = cameraController.torchEnabled
             lowLight = cameraController.isLowLightMode()
+            isFrontCamera = cameraController.lensFacing == CameraSelector.LENS_FACING_FRONT
             exposureRange = cameraController.exposureIndexRange()
             attempts++
             if (maxZoom > minZoom + 0.01f || hasFlash || exposureRange.last > 0) break
@@ -374,6 +381,16 @@ fun StudioScreen(
     }
 
     LaunchedEffect(Unit) { fillLightLevel = 35 }
+
+    // Exposition réellement appliquée par le capteur (rafraîchie 2x/seconde).
+    LaunchedEffect(hasCamera, phase) {
+        if (!hasCamera) return@LaunchedEffect
+        while (true) {
+            liveExposureMs = (cameraController.liveExposureNs / 1_000_000L).toInt()
+            liveIso = cameraController.liveIso
+            delay(500)
+        }
+    }
 
     LaunchedEffect(infoMessage) {
         if (infoMessage != null) {
@@ -548,9 +565,12 @@ fun StudioScreen(
                         infoMessage = "Arrête l'enregistrement pour changer de caméra."
                     } else {
                         torchOn = false
+                        exposureMs = 0
+                        cameraController.setManualExposureNs(null)
                         cameraController.switchCamera(previewView, mirrorPreview = true) { event ->
                             if (event is CameraEvent.Failure) cameraError = event.message
                         }
+                        isFrontCamera = cameraController.lensFacing == CameraSelector.LENS_FACING_FRONT
                         zoomRatio = 1f
                         hasFlash = cameraController.hasTorch()
                         minZoom = cameraController.minZoom()
@@ -609,6 +629,44 @@ fun StudioScreen(
                     valueLabel = "${(settings.backgroundAlpha * 100).toInt()} %",
                     onValueChange = { v -> viewModel.updateSettings { it.copy(backgroundAlpha = v) } }
                 )
+                if (isFrontCamera) {
+                    Text(
+                        "Pose du capteur selfie",
+                        style = MaterialTheme.typography.bodyMedium,
+                        color = TextPrimary
+                    )
+                    Spacer(Modifier.height(6.dp))
+                    SegmentedSelector(
+                        options = listOf(
+                            0 to "Auto",
+                            33 to "1/30",
+                            66 to "1/15",
+                            125 to "1/8",
+                            200 to "1/5"
+                        ),
+                        selected = exposureMs,
+                        onSelect = { value ->
+                            exposureMs = value
+                            cameraController.setManualExposureNs(if (value == 0) null else value * 1_000_000L) { evt ->
+                                if (evt is CameraEvent.Info) infoMessage = evt.message
+                            }
+                            infoMessage = if (value == 0) {
+                                "Exposition automatique."
+                            } else {
+                                "Pose forcée à 1/${(1000.0 / value).toInt()} s — garde le téléphone stable."
+                            }
+                        }
+                    )
+                    Spacer(Modifier.height(4.dp))
+                    Text(
+                        "Pose longue = image beaucoup plus lumineuse, comme en mode photo. " +
+                            "Exposition réelle : ${if (liveExposureMs > 0) "1/${(1000.0 / liveExposureMs).toInt()} s" else "—"}" +
+                                   if (liveIso > 0) " · ISO $liveIso" else "",
+                        style = MaterialTheme.typography.labelSmall,
+                        color = Accent
+                    )
+                    Spacer(Modifier.height(10.dp))
+                }
                 if (!hasFlash) {
                     SettingSlider(
                         label = "Lampe d'appoint (frontale)",

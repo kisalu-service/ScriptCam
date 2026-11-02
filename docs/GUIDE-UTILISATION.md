@@ -48,8 +48,17 @@ Dans l'ordre :
 2. Réglages rapides (⚙) → **Luminosité de l'image** : +1, puis +2 EV.
 3. Réglages rapides → **Lampe d'appoint (frontale)** : monte à 60-100 % en te rapprochant du
    téléphone (elle éclaire vraiment le visage).
-4. Bouton **Diagnostic caméra selfie** : il indique l'exposition et l'ISO maximales du capteur
+4. **Pose du capteur selfie** (réglages rapides, visible seulement en caméra frontale) :
+   passe de « Auto » à **1/15** puis **1/8**. C'est le réglage qui rapproche l'application du
+   mode photo de ton téléphone. Regarde la ligne « Exposition réelle » : elle doit descendre.
+   Garde le téléphone stable (trépied ou appui) car la pose longue floute les mouvements.
+5. Bouton **Diagnostic caméra selfie** : il indique l'exposition et l'ISO maximales du capteur
    frontal. Si ces valeurs sont faibles, seul un éclairage extérieur améliorera l'image.
+
+## 5bis. Pourquoi l'appli photo du téléphone est plus lumineuse ?
+Parce qu'elle utilise le mode **photo** : elle peut poser 1/8 s, alors qu'en **vidéo** le capteur
+doit tenir 30 images/seconde et se limite à ~1/30 s. Le sélecteur « Pose du capteur selfie »
+supprime cette contrainte : il force une pose longue comme en photo.
 
 ## 6. La vidéo est sombre (tournage de nuit ou en intérieur)
 Dans l'ordre :

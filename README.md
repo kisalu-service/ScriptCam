@@ -83,8 +83,17 @@ ajustements spécifiques ont été ajoutés :
 - la **lampe d'appoint** (voile blanc d'écran) est maintenant **dosable** de 0 à 100 % depuis les
   réglages rapides (35 % par défaut) : à 86 % fixes, elle brûlait les blancs sans éclairer mieux;
 - un bouton **« Diagnostic caméra selfie »** affiche le temps d'exposition maximal, l'ISO maximale
-  et la plage d'exposition réellement supportés par le capteur frontal de l'appareil. Si le
-  matériel plafonne, aucune application ne peut compenser : c'est l'éclairage qui fait la différence.
+  et la plage d'exposition réellement supportés par le capteur frontal de l'appareil.
+
+**Pose manuelle du capteur (selfie)** — le correctif décisif. En mode vidéo, l'exposition
+automatique choisit une pose courte (≈ 1/30 s) pour tenir les 30 images/seconde, alors que
+l'application photo du téléphone utilise le mode photo et peut poser 1/8 s : c'est l'écart de
+luminosité observé. Le studio propose donc, caméra frontale active, un sélecteur
+**Auto / 1-30 / 1-15 / 1-8 / 1-5 s** qui impose `CONTROL_AE_MODE_OFF` +
+`SENSOR_EXPOSURE_TIME` (via `Camera2Interop`, dans la plage réelle du capteur). L'exposition
+effectivement appliquée (et l'ISO) est affichée en direct pour vérifier le résultat.
+Contrepartie : téléphone à stabiliser, et risque de saccade quand la pose dépasse la période
+d'image.
 - Enregistrement vidéo + audio via CameraX, **1080p (FHD) demandé avec repli automatique** vers la
   meilleure qualité disponible (téléphones de gamme modeste).
 - Compte à rebours 3 s avant le départ, chronomètre, pause / reprise, arrêt.

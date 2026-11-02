@@ -24,8 +24,11 @@ import androidx.camera.video.Recording
 import androidx.camera.video.VideoCapture
 import androidx.camera.video.VideoRecordEvent
 import androidx.camera.view.PreviewView
+import androidx.camera.camera2.interop.Camera2CameraInfo
+import androidx.camera.camera2.interop.ExperimentalCamera2Interop
 import androidx.core.content.ContextCompat
 import androidx.lifecycle.LifecycleOwner
+import android.hardware.camera2.CameraCharacteristics
 import android.os.Build
 import android.os.Environment
 import java.io.File
@@ -287,6 +290,9 @@ class CameraController(
         }.getOrNull()
     }
 
+    /** Pousse l'exposition à son maximum matériel (dernier recours, image très bruitée). */
+    fun maxExposureCompensation(): Int? = setExposureCompensation(exposureIndexRange().last)
+
     private fun applyExposureLock(steps: Int) {
         runCatching {
             val cam = camera ?: return@runCatching
@@ -320,16 +326,63 @@ class CameraController(
         return true
     }
 
-    /** Plage d'images la plus « lente » encore fluide, pour laisser le capteur exposer. */
+    /**
+     * Plage d'images demandée au capteur.
+     *
+     * Un capteur selfie est petit : en basse lumière il a besoin d'un temps d'exposition long.
+     * Une plage FIXE à 30/30 l'empêche de descendre sous ~1/30 s. On demande donc, en basse
+     * lumière sur la caméra frontale, une plage 15-30 : l'appareil peut alors exposer jusqu'à
+     * 1/15 s (2× plus de lumière) au prix d'une légère saccade — acceptable pour un visage
+     * qui parle face caméra.
+     */
     private fun pickFpsRange(): android.util.Range<Int>? = runCatching {
         val info = camera?.cameraInfo ?: return@runCatching null
         val ranges = info.supportedFrameRateRanges
-        // Priorité : 30/30 (fluide, sans double exposition), sinon 24/24, sinon le max fixe.
+        val frontSelfieLowLight = lowLightMode &&
+            lensFacing == CameraSelector.LENS_FACING_FRONT
+        if (frontSelfieLowLight) {
+            // On cherche la plage qui autorise le plus long temps d'exposition.
+            ranges.minByOrNull { it.lower }?.let { return@runCatching it }
+        }
+        // Sinon : 30/30 (fluide, sans double exposition), puis 24/24, puis le plus proche.
         val fixed = ranges.filter { it.lower == it.upper }
         fixed.firstOrNull { it.upper == 30 }
             ?: fixed.firstOrNull { it.upper == 24 }
             ?: fixed.minByOrNull { it.upper }
     }.getOrNull()
+
+    // ------------------------------------------ Diagnostic caméra frontale
+
+    /**
+     * Caractéristiques du capteur selfie, utiles quand l'image reste sombre :
+     * temps d'exposition maximal, sensibilité (ISO) maximale et plage d'exposition.
+     * Sur beaucoup de téléphones d'entrée/milieu de gamme, la caméra frontale plafonne à
+     * 1/15 s et à un petit capteur : aucune application ne peut alors « inventer » de la
+     * lumière, seuls un éclairage ou une exposition maximale aident.
+     */
+    @OptIn(ExperimentalCamera2Interop::class)
+    fun frontCameraDiagnostics(): String {
+        val provider = cameraProvider ?: return "Caméra non initialisée"
+        return runCatching {
+            val info = provider.getCameraInfo(
+                CameraSelector.Builder().requireLensFacing(CameraSelector.LENS_FACING_FRONT).build()
+            ) ?: return "Pas de caméra frontale"
+            val chars = Camera2CameraInfo.from(info)
+            val maxExposureNs = chars.getCameraCharacteristic(
+                CameraCharacteristics.SENSOR_INFO_EXPOSURE_TIME_RANGE
+            )?.upper
+            val maxIso = chars.getCameraCharacteristic(CameraCharacteristics.SENSOR_INFO_SENSITIVITY_RANGE)?.upper
+            val evRange = info.exposureState.exposureCompensationRange
+            buildString {
+                append("Selfie : ")
+                append(if (maxExposureNs != null) "expo max ${maxExposureNs / 1_000_000} ms" else "expo max ?")
+                append(" · ")
+                append(if (maxIso != null) "ISO max $maxIso" else "ISO max ?")
+                append(" · ")
+                append("expo ±${evRange.upper} crans")
+            }.also { Log.i(TAG, it) }
+        }.getOrElse { "Diagnostic indisponible" }
+    }
 
     // ------------------------------------------------ Flash photo (basse lumière)
 

@@ -203,12 +203,22 @@ fun StudioScreen(
     var lowLight by remember { mutableStateOf(settings.lowLightMode) }
     var exposureSteps by remember { mutableStateOf(settings.exposureSteps) }
     var exposureRange by remember { mutableStateOf(0..0) }
+    /** Intensité de la lampe d'appoint frontale (0 = éteinte). */
+    var fillLightLevel by remember { mutableStateOf(0) }
+    var frontDiagnostics by remember { mutableStateOf<String?>(null) }
+
+    // Mode basse lumière : mémorisé pour la liaison, et appliqué même s'il change à chaud.
+    LaunchedEffect(settings.lowLightMode) {
+        lowLight = settings.lowLightMode
+        cameraController.setLowLightMode(settings.lowLightMode) { evt ->
+            if (evt is CameraEvent.Info) infoMessage = evt.message
+        }
+    }
 
     DisposableEffect(hasCamera) {
         if (hasCamera) {
-            // Le mode basse lumière (720p) doit être connu AVANT la liaison : il change la
-            // résolution demandée au capteur.
-            cameraController.setLowLightMode(settings.lowLightMode)
+            // La préférence a déjà été poussée dans le contrôleur par le LaunchedEffect
+            // ci-dessus : la liaison utilise donc la bonne résolution dès le départ.
             cameraController.bind(
                 previewView = previewView,
                 preferFront = session.useFrontCamera,
@@ -363,6 +373,8 @@ fun StudioScreen(
         onDispose { activity?.requestedOrientation = ActivityInfo.SCREEN_ORIENTATION_UNSPECIFIED }
     }
 
+    LaunchedEffect(Unit) { fillLightLevel = 35 }
+
     LaunchedEffect(infoMessage) {
         if (infoMessage != null) {
             delay(3200)
@@ -400,10 +412,12 @@ fun StudioScreen(
         // Lampe d'appoint : la caméra frontale n'a presque jamais de flash, on éclaire donc
         // le visage avec un voile blanc (non enregistré dans la vidéo).
         if (torchOn && !hasFlash && hasCamera) {
+            // Dosage : 35 % suffit à éclairer un visage proche sans cramer l'image.
+            // Le niveau est réglable dans les réglages rapides.
             Box(
                 modifier = Modifier
                     .fillMaxSize()
-                    .background(Color.White.copy(alpha = 0.86f))
+                    .background(Color.White.copy(alpha = fillLightLevel / 100f))
             )
         }
 
@@ -595,6 +609,21 @@ fun StudioScreen(
                     valueLabel = "${(settings.backgroundAlpha * 100).toInt()} %",
                     onValueChange = { v -> viewModel.updateSettings { it.copy(backgroundAlpha = v) } }
                 )
+                if (!hasFlash) {
+                    SettingSlider(
+                        label = "Lampe d'appoint (frontale)",
+                        value = fillLightLevel.toFloat(),
+                        valueRange = 0f..100f,
+                        valueLabel = "$fillLightLevel %",
+                        onValueChange = { v ->
+                            fillLightLevel = v.toInt()
+                            if (fillLightLevel > 0 && !torchOn) {
+                                torchOn = true
+                                cameraController.setTorch(true)
+                            }
+                        }
+                    )
+                }
                 if (exposureRange.last > exposureRange.first) {
                     SettingSlider(
                         label = "Luminosité de l'image",
@@ -617,9 +646,33 @@ fun StudioScreen(
                     valueLabel = "${settings.wordsPerMinute} mots/min",
                     onValueChange = { v -> viewModel.updateSettings { it.copy(wordsPerMinute = v.toInt()) } }
                 )
-                Spacer(Modifier.height(6.dp))
+                Spacer(Modifier.height(4.dp))
                 Text(
-                    "Faible luminosité : active le mode basse lumière (720p) plutôt que de monter la luminosité à fond, qui introduit du grain et du flou.",
+                    "Selfie sombre : active le mode basse lumière (soleil), monte « Luminosité de l'image » de +1 à +2, puis la lampe d'appoint si besoin.",
+                    style = MaterialTheme.typography.labelMedium,
+                    color = Accent
+                )
+                frontDiagnostics?.let { diag ->
+                    Spacer(Modifier.height(4.dp))
+                    Text(diag, style = MaterialTheme.typography.labelSmall, color = TextSecondary)
+                }
+                Box(
+                    modifier = Modifier
+                        .padding(top = 6.dp)
+                        .clip(RoundedCornerShape(10.dp))
+                        .background(Ink800)
+                        .clickable { frontDiagnostics = cameraController.frontCameraDiagnostics() }
+                        .padding(horizontal = 10.dp, vertical = 6.dp)
+                ) {
+                    Text(
+                        "Diagnostic caméra selfie",
+                        style = MaterialTheme.typography.labelSmall,
+                        color = TextPrimary
+                    )
+                }
+                Spacer(Modifier.height(2.dp))
+                Text(
+                    "Faible luminosité : préfère le mode basse lumière (720p) à une luminosité maximale, qui introduit du grain.",
                     style = MaterialTheme.typography.labelSmall,
                     color = TextSecondary
                 )

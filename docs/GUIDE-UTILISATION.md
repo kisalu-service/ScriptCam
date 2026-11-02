@@ -41,7 +41,17 @@ Astuce : tu peux envoyer un script depuis une autre application (sélection → 
 - **Recommencer** relance le studio avec le même texte.
 - **Supprimer** retire la vidéo de l'application et de la galerie.
 
-## 5. La vidéo est sombre (tournage de nuit ou en intérieur)
+## 5. Le selfie est sombre alors que la caméra arrière est correcte
+La caméra frontale a un petit capteur et pas de flash : c'est normal qu'elle soit la plus faible.
+Dans l'ordre :
+1. Icône **soleil** : mode basse lumière (720p) — indispensable en selfie.
+2. Réglages rapides (⚙) → **Luminosité de l'image** : +1, puis +2 EV.
+3. Réglages rapides → **Lampe d'appoint (frontale)** : monte à 60-100 % en te rapprochant du
+   téléphone (elle éclaire vraiment le visage).
+4. Bouton **Diagnostic caméra selfie** : il indique l'exposition et l'ISO maximales du capteur
+   frontal. Si ces valeurs sont faibles, seul un éclairage extérieur améliorera l'image.
+
+## 6. La vidéo est sombre (tournage de nuit ou en intérieur)
 Dans l'ordre :
 1. Appuie sur l'icône **soleil** en haut du studio : **mode basse lumière** (720p). C'est le
    réglage qui change le plus la luminosité.
@@ -51,15 +61,15 @@ Dans l'ordre :
 4. En dernier recours, l'icône **appareil photo** prend une photo lumineuse (elle peut exposer
    beaucoup plus longtemps que la vidéo).
 
-## 6. Mon image est-elle inversée ?
+## 7. Mon image est-elle inversée ?
 L'aperçu de la caméra frontale est un miroir (comme quand tu te regardes dans un miroir), et la
 vidéo enregistrée est désormais **identique à cet aperçu** : ce que tu vois est ce que tu obtiens.
 
-## 7. Où sont mes vidéos ?
+## 8. Où sont mes vidéos ?
 Galerie du téléphone → album **Movies/ScriptCam**. Elles restent aussi listées dans
 **Bibliothèque → Vidéos** avec les actions lecture / partage / suppression.
 
-## 8. Réglages utiles
+## 9. Réglages utiles
 - **Position verticale** : place le texte au-dessus de ton visage (0 % = haut de l'écran).
 - **Transparence du fond** : 55 % par défaut ; monte-la si le fond est clair.
 - **Texte en miroir** : pour un téléprompteur physique à miroir semi-réfléchissant.

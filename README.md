@@ -73,6 +73,18 @@ Trois leviers, du plus efficace au plus risqué :
    pour garder l'application légère.
 - Le **verrouillage du framerate** (30/30 plutôt que 15-30) laisse aussi le capteur allonger son
   temps d'exposition en basse lumière.
+
+**Cas particulier de la caméra selfie (frontale).** Son capteur est nettement plus petit et elle
+n'a presque jamais de flash : c'est la caméra la plus difficile en faible éclairage. Trois
+ajustements spécifiques ont été ajoutés :
+- en mode basse lumière, l'application demande au capteur frontal une plage **15-30 i/s** (au lieu
+  d'un verrou 30/30) : il peut ainsi exposer jusqu'à 1/15 s, soit deux fois plus de lumière, avec
+  une légère saccade acceptable pour un visage face caméra ;
+- la **lampe d'appoint** (voile blanc d'écran) est maintenant **dosable** de 0 à 100 % depuis les
+  réglages rapides (35 % par défaut) : à 86 % fixes, elle brûlait les blancs sans éclairer mieux;
+- un bouton **« Diagnostic caméra selfie »** affiche le temps d'exposition maximal, l'ISO maximale
+  et la plage d'exposition réellement supportés par le capteur frontal de l'appareil. Si le
+  matériel plafonne, aucune application ne peut compenser : c'est l'éclairage qui fait la différence.
 - Enregistrement vidéo + audio via CameraX, **1080p (FHD) demandé avec repli automatique** vers la
   meilleure qualité disponible (téléphones de gamme modeste).
 - Compte à rebours 3 s avant le départ, chronomètre, pause / reprise, arrêt.
@@ -250,7 +262,8 @@ publication galerie spécifique Android 7-9).
 4. **Torche frontale** : dépend du matériel. Sur la plupart des téléphones il n'existe aucun
    flash frontal ; la lampe d'appoint écran est alors proposée (elle éclaire mais n'est pas
    enregistrée). Le zoom, lui, est numérique au-delà de l'objectif natif.
-5. **Basse lumière** : la luminosité d'une vidéo dépend d'abord du capteur. Sur un téléphone
+5. **Basse lumière** : la luminosité d'une vidéo dépend d'abord du capteur (taille des photosites,
+   ouverture). La caméra selfie est structurellement la plus faible. Sur un téléphone
    d'entrée de gamme, le mode 720p et l'exposition +EV améliorent la situation mais ne
    remplacent pas un éclairage (fenêtre, lampe, ring light). La torche arrière aide réellement ;
    la lampe d'appoint frontale éclaire la scène, pas le capteur.

@@ -48,6 +48,15 @@ rebours 0/3/5 s, écran maintenu allumé.
 
 ### Caméra et enregistrement
 - Aperçu en direct, bascule caméra frontale ↔ arrière.
+- **Zoom** : pincement à deux doigts sur l'image, ou glissière dédiée dans le studio
+  (du zoom minimal de l'objectif jusqu'à son zoom maximal), avec retour à 1× en un appui.
+- **Lumière** : bouton torche dans la barre du haut.
+  - Caméra arrière : torche matérielle continue, visible dans l'enregistrement.
+  - Caméra frontale : la plupart des téléphones n'ont pas de flash frontal ; l'application
+    bascule alors sur une **lampe d'appoint** (voile blanc sur l'écran) qui éclaire le visage.
+    Cette lumière d'écran n'apparaît pas dans le fichier vidéo.
+- **Orientation cohérente** : la vidéo est enregistrée **en miroir pour la caméra frontale**
+  (`MirrorMode.MIRROR_MODE_ON_FRONT_ONLY`), donc identique à ce que tu vois pendant le tournage.
 - Enregistrement vidéo + audio via CameraX, **1080p (FHD) demandé avec repli automatique** vers la
   meilleure qualité disponible (téléphones de gamme modeste).
 - Compte à rebours 3 s avant le départ, chronomètre, pause / reprise, arrêt.
@@ -219,11 +228,17 @@ publication galerie spécifique Android 7-9).
    fonctionner (la pause du téléprompteur, elle, reste toujours disponible).
 2. **Changement de caméra pendant l'enregistrement** : volontairement bloqué (CameraX ne permet pas
    de changer de capteur au milieu d'un fichier). Le message l'indique à l'écran.
-3. **Format 9:16** : l'orientation verticale est forcée dans le studio ; le fichier produit est
+3. **Miroir** : l'aperçu frontal est un miroir (comme un miroir réel) ; l'enregistrement est
+   désormais aligné sur cet aperçu. Si tu préfères une vidéo non inversée, c'est le comportement
+   `MirrorMode.MIRROR_MODE_OFF` qu'il faut changer dans `CameraController.bindInternal`.
+4. **Torche frontale** : dépend du matériel. Sur la plupart des téléphones il n'existe aucun
+   flash frontal ; la lampe d'appoint écran est alors proposée (elle éclaire mais n'est pas
+   enregistrée). Le zoom, lui, est numérique au-delà de l'objectif natif.
+5. **Format 9:16** : l'orientation verticale est forcée dans le studio ; le fichier produit est
    celui du capteur dans cette orientation (1080 × 1920 sur la plupart des téléphones). Pour un
    recadrage strict 9:16 sur tous les appareils, il faudrait un transcodage (MediaCodec/Media3
    Transformer) — non inclus ici pour garder l'app légère et l'enregistrement instantané.
-4. **Android 7-9** : l'enregistrement passe par un fichier privé publié dans la galerie ; le
+6. **Android 7-9** : l'enregistrement passe par un fichier privé publié dans la galerie ; le
    partage utilise FileProvider.
 
 ---

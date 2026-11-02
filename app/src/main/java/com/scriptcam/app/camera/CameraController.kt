@@ -5,12 +5,15 @@ import android.content.Context
 import android.content.pm.PackageManager
 import android.net.Uri
 import android.util.Log
+import androidx.camera.core.Camera
 import androidx.camera.core.CameraSelector
 import androidx.camera.core.Preview
+import androidx.camera.core.ZoomState
 import androidx.camera.lifecycle.ProcessCameraProvider
 import androidx.camera.video.FallbackStrategy
 import androidx.camera.video.FileOutputOptions
 import androidx.camera.video.MediaStoreOutputOptions
+import androidx.camera.video.MirrorMode
 import androidx.camera.video.Quality
 import androidx.camera.video.QualitySelector
 import androidx.camera.video.Recorder
@@ -64,6 +67,17 @@ class CameraController(
     private var videoCapture: VideoCapture<Recorder>? = null
     private var preview: Preview? = null
     private var activeRecording: Recording? = null
+
+    /** Instance CameraX liée : indispensable pour piloter le zoom et la torche. */
+    private var camera: Camera? = null
+
+    /** Zoom courant (1.0 = objectif natif). */
+    var zoomRatio: Float = 1f
+        private set
+
+    /** Torche allumée (caméra arrière) ou lampe d'appoint (caméra frontale). */
+    var torchEnabled: Boolean = false
+        private set
 
     var recordingState: RecordingState = RecordingState.IDLE
         private set
@@ -134,13 +148,27 @@ class CameraController(
             val recorder = Recorder.Builder()
                 .setQualitySelector(qualitySelector)
                 .build()
-            videoCapture = VideoCapture.withOutput(recorder)
+            // IMPORTANT : l'aperçu de la caméra frontale est en miroir (comme un miroir réel),
+            // mais CameraX n'enregistre PAS le miroir par défaut → la vidéo finale était
+            // inversée par rapport à ce que l'utilisateur voyait pendant le tournage.
+            // MIRROR_MODE_ON_FRONT_ONLY aligne le fichier sur l'aperçu (recommandation Google).
+            videoCapture = VideoCapture.Builder(recorder)
+                .setMirrorMode(MirrorMode.MIRROR_MODE_ON_FRONT_ONLY)
+                .build()
 
-            // PreviewView applique automatiquement le miroir en caméra frontale ;
-            // on le désactive si l'utilisateur préfère une image non inversée.
-            previewView.scaleX = if (mirrorPreview && lensFacing == CameraSelector.LENS_FACING_FRONT) -1f else 1f
+            // PreviewView applique déjà le miroir de la caméra frontale : on ne le retourne
+            // plus manuellement, sinon l'aperçu et la vidéo repartaient en sens opposés.
+            previewView.scaleX = 1f
 
-            provider.bindToLifecycle(lifecycleOwner, selector, preview, videoCapture)
+            camera = provider.bindToLifecycle(lifecycleOwner, selector, preview, videoCapture)
+            // Le zoom et la torche sont réinitialisés à chaque (re)liaison.
+            camera?.let { cam ->
+                if (cam.cameraInfo.hasFlashUnit()) {
+                    cam.cameraControl.enableTorch(false)
+                }
+                torchEnabled = false
+                cam.cameraControl.setZoomRatio(zoomRatio.coerceIn(minZoom(), maxZoom()))
+            }
         } catch (t: Throwable) {
             Log.e(TAG, "Échec de la liaison caméra", t)
             onEvent(CameraEvent.Failure("Caméra indisponible : ${t.message}", t))
@@ -169,8 +197,91 @@ class CameraController(
             return null
         }
         lensFacing = target
+        // Le zoom d'un objectif n'a pas de sens sur l'autre : on repart de 1x.
+        zoomRatio = 1f
+        torchEnabled = false
         bindInternal(previewView, mirrorPreview, onEvent)
         return target
+    }
+
+    // ------------------------------------------------------------- Zoom
+
+    /** Zoom minimal proposé par l'objectif (souvent 1.0, parfois 0.5 en ultra grand-angle). */
+    fun minZoom(): Float = runCatching { camera?.cameraInfo?.zoomState?.value?.minZoomRatio ?: 1f }
+        .getOrDefault(1f)
+
+    /** Zoom maximal proposé par l'objectif. */
+    fun maxZoom(): Float = runCatching { camera?.cameraInfo?.zoomState?.value?.maxZoomRatio ?: 1f }
+        .getOrDefault(1f)
+
+    /** Zoom courant exposé par CameraX (source de vérité après un pincement). */
+    fun currentZoom(): Float = runCatching { camera?.cameraInfo?.zoomState?.value?.zoomRatio ?: zoomRatio }
+        .getOrDefault(zoomRatio)
+
+    fun zoomStateFlow(): kotlinx.coroutines.flow.StateFlow<ZoomState?>? =
+        runCatching { camera?.cameraInfo?.zoomState }.getOrNull()
+
+    /**
+     * Applique un facteur de zoom, borné aux capacités de l'objectif.
+     * @return le zoom réellement appliqué (null si la caméra n'est pas prête).
+     */
+    fun setZoomRatio(ratio: Float): Float? {
+        val cam = camera ?: return null
+        val target = ratio.coerceIn(minZoom(), maxZoom())
+        return runCatching {
+            cam.cameraControl.setZoomRatio(target)
+            zoomRatio = target
+            target
+        }.getOrNull()
+    }
+
+    /** Multiplie le zoom courant par [factor] (ex. 0.2 pour un pincement vers l'intérieur). */
+    fun zoomBy(factor: Float): Float? = setZoomRatio(currentZoom() * factor)
+
+    /** Revient à l'objectif natif (1x). */
+    fun resetZoom(): Float? = setZoomRatio(1f)
+
+    // ------------------------------------------------------------ Torche
+
+    /** Vrai si la caméra active dispose d'une unité flash utilisable comme torche. */
+    fun hasTorch(): Boolean = runCatching { camera?.cameraInfo?.hasFlashUnit() == true }
+        .getOrDefault(false)
+
+    /**
+     * Allume ou éteint la lumière.
+     *
+     * - Caméra arrière : torche matérielle (continu, visible dans l'enregistrement).
+     * - Caméra frontale : la plupart des téléphones n'ont pas de flash frontal. On bascule
+     *   alors sur une « lampe d'appoint » : l'aperçu est éclairé en blanc pour déboucher le
+     *   visage. Cette lumière d'écran n'apparaît pas dans le fichier vidéo — c'est une
+     *   limite matérielle, pas un bug.
+     *
+     * @return l'état effectif de la lampe, ou null si aucune solution d'éclairage n'existe.
+     */
+    fun toggleTorch(): Boolean? {
+        val cam = camera ?: return null
+        val wanted = !torchEnabled
+        if (cam.cameraInfo.hasFlashUnit()) {
+            return runCatching {
+                cam.cameraControl.enableTorch(wanted)
+                torchEnabled = wanted
+                wanted
+            }.getOrNull()
+        }
+        // Pas de flash unit : la lampe d'appoint est gérée côté interface.
+        torchEnabled = wanted
+        return wanted
+    }
+
+    fun setTorch(enabled: Boolean): Boolean? {
+        val cam = camera ?: return null
+        return runCatching {
+            if (cam.cameraInfo.hasFlashUnit()) {
+                cam.cameraControl.enableTorch(enabled)
+            }
+            torchEnabled = enabled
+            enabled
+        }.getOrNull()
     }
 
     /** Démarre l'enregistrement dans la galerie (MediaStore). */
@@ -292,6 +403,8 @@ class CameraController(
     }
 
     fun unbind() {
+        runCatching { if (camera?.cameraInfo?.hasFlashUnit() == true) camera?.cameraControl?.enableTorch(false) }
+        torchEnabled = false
         runCatching { activeRecording?.stop() }
         activeRecording = null
         runCatching { cameraProvider?.unbindAll() }

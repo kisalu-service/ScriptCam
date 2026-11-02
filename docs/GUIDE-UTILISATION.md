@@ -29,18 +29,27 @@ Astuce : tu peux envoyer un script depuis une autre application (sélection → 
    - ↺ : revenir au début du texte
    - ⏸ (au centre, en bas) : mise en pause de la **vidéo**
    - ⬛ : arrêter et enregistrer
-4. L'icône ⚙ ouvre les réglages rapides (position, taille, transparence, rythme) sans quitter le studio.
+4. **Zoom** : pince à deux doigts sur l'image, ou utilise la glissière au-dessus des commandes.
+   Un appui sur « 1.0× » remet le zoom à zéro.
+5. **Lumière** : icône éclair en haut à droite. En caméra arrière, c'est la torche (elle apparaît
+   dans la vidéo). En caméra frontale, c'est une lampe d'appoint blanche à l'écran (utile pour
+   déboucher le visage, mais non enregistrée par la caméra).
+6. L'icône ⚙ ouvre les réglages rapides (position, taille, transparence, rythme) sans quitter le studio.
 
 ## 4. Après le tournage
 - **Lire la vidéo**, puis **Partager (TikTok, Instagram…)** : choisis TikTok dans le menu Android.
 - **Recommencer** relance le studio avec le même texte.
 - **Supprimer** retire la vidéo de l'application et de la galerie.
 
-## 5. Où sont mes vidéos ?
+## 5. Mon image est-elle inversée ?
+L'aperçu de la caméra frontale est un miroir (comme quand tu te regardes dans un miroir), et la
+vidéo enregistrée est désormais **identique à cet aperçu** : ce que tu vois est ce que tu obtiens.
+
+## 6. Où sont mes vidéos ?
 Galerie du téléphone → album **Movies/ScriptCam**. Elles restent aussi listées dans
 **Bibliothèque → Vidéos** avec les actions lecture / partage / suppression.
 
-## 6. Réglages utiles
+## 7. Réglages utiles
 - **Position verticale** : place le texte au-dessus de ton visage (0 % = haut de l'écran).
 - **Transparence du fond** : 55 % par défaut ; monte-la si le fond est clair.
 - **Texte en miroir** : pour un téléprompteur physique à miroir semi-réfléchissant.

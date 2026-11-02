@@ -15,6 +15,7 @@ import androidx.compose.animation.fadeIn
 import androidx.compose.animation.fadeOut
 import androidx.compose.foundation.background
 import androidx.compose.foundation.clickable
+import androidx.compose.foundation.gestures.detectTransformGestures
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
@@ -42,9 +43,13 @@ import androidx.compose.material.icons.filled.SkipNext
 import androidx.compose.material.icons.filled.SkipPrevious
 import androidx.compose.material.icons.filled.Stop
 import androidx.compose.material.icons.filled.Tune
+import androidx.compose.material.icons.outlined.FlashOff
+import androidx.compose.material.icons.outlined.FlashOn
 import androidx.compose.material3.CircularProgressIndicator
 import androidx.compose.material3.Icon
 import androidx.compose.material3.MaterialTheme
+import androidx.compose.material3.Slider
+import androidx.compose.material3.SliderDefaults
 import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.DisposableEffect
@@ -63,6 +68,7 @@ import androidx.compose.ui.graphics.Brush
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.platform.LocalLifecycleOwner
+import androidx.compose.ui.input.pointer.pointerInput
 import androidx.compose.ui.platform.LocalView
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
@@ -186,6 +192,13 @@ fun StudioScreen(
     var showTuning by remember { mutableStateOf(false) }
     var savedUri by remember { mutableStateOf<Uri?>(null) }
 
+    // Zoom / torche
+    var zoomRatio by remember { mutableStateOf(1f) }
+    var minZoom by remember { mutableStateOf(1f) }
+    var maxZoom by remember { mutableStateOf(1f) }
+    var torchOn by remember { mutableStateOf(false) }
+    var hasFlash by remember { mutableStateOf(false) }
+
     DisposableEffect(hasCamera) {
         if (hasCamera) {
             cameraController.bind(
@@ -198,6 +211,22 @@ fun StudioScreen(
             }
         }
         onDispose { cameraController.unbind() }
+    }
+
+    // Capacités de l'objectif courant (zoom et flash).
+    // CameraX termine la liaison de façon asynchrone : on interroge les capacités
+    // jusqu'à obtenir une réponse exploitable (utile sur les appareils lents).
+    LaunchedEffect(hasCamera) {
+        if (!hasCamera) return@LaunchedEffect
+        repeat(12) {
+            delay(300)
+            minZoom = cameraController.minZoom()
+            maxZoom = cameraController.maxZoom()
+            zoomRatio = cameraController.currentZoom()
+            hasFlash = cameraController.hasTorch()
+            torchOn = cameraController.torchEnabled
+            if (maxZoom > minZoom + 0.01f || hasFlash) break
+        }
     }
 
     /** Gestionnaire unique de tous les événements d'enregistrement. */
@@ -315,13 +344,37 @@ fun StudioScreen(
     Box(modifier = Modifier.fillMaxSize().background(Color.Black)) {
 
         if (hasCamera) {
-            AndroidView(factory = { previewView }, modifier = Modifier.fillMaxSize())
+            // Pincement à deux doigts = zoom optique/numérique en direct.
+            AndroidView(
+                factory = { previewView },
+                modifier = Modifier
+                    .fillMaxSize()
+                    .pointerInput(hasCamera) {
+                        detectTransformGestures { _, _, zoomChange, _ ->
+                            if (maxZoom > minZoom) {
+                                val target = (cameraController.currentZoom() * zoomChange)
+                                    .coerceIn(minZoom, maxZoom)
+                                cameraController.setZoomRatio(target)?.let { zoomRatio = it }
+                            }
+                        }
+                    }
+            )
         } else {
             PermissionPlaceholder {
                 permissionLauncher.launch(
                     arrayOf(Manifest.permission.CAMERA, Manifest.permission.RECORD_AUDIO)
                 )
             }
+        }
+
+        // Lampe d'appoint : la caméra frontale n'a presque jamais de flash, on éclaire donc
+        // le visage avec un voile blanc (non enregistré dans la vidéo).
+        if (torchOn && !hasFlash && hasCamera) {
+            Box(
+                modifier = Modifier
+                    .fillMaxSize()
+                    .background(Color.White.copy(alpha = 0.86f))
+            )
         }
 
         // Dégradés pour la lisibilité du texte et des commandes
@@ -393,12 +446,46 @@ fun StudioScreen(
 
             RoundIconButton(
                 onClick = {
+                    val newState = cameraController.toggleTorch()
+                    when (newState) {
+                        null -> infoMessage = "Lumière indisponible sur cette caméra."
+                        else -> {
+                            torchOn = newState
+                            if (!hasFlash) {
+                                infoMessage = if (newState) {
+                                    "Lampe d'appoint activée (la caméra frontale n'a pas de flash)."
+                                } else {
+                                    "Lampe d'appoint désactivée."
+                                }
+                            } else {
+                                infoMessage = if (newState) "Torche allumée." else "Torche éteinte."
+                            }
+                        }
+                    }
+                },
+                size = 44,
+                background = if (torchOn) Accent.copy(alpha = 0.9f) else Color.Black.copy(alpha = 0.5f)
+            ) {
+                Icon(
+                    imageVector = if (torchOn) Icons.Outlined.FlashOn else Icons.Outlined.FlashOff,
+                    contentDescription = "Lampe",
+                    tint = if (torchOn) Color.Black else TextPrimary
+                )
+            }
+            Spacer(Modifier.width(8.dp))
+            RoundIconButton(
+                onClick = {
                     if (phase == RecPhase.RECORDING || phase == RecPhase.PAUSED) {
                         infoMessage = "Arrête l'enregistrement pour changer de caméra."
                     } else {
+                        torchOn = false
                         cameraController.switchCamera(previewView, mirrorPreview = true) { event ->
                             if (event is CameraEvent.Failure) cameraError = event.message
                         }
+                        zoomRatio = 1f
+                        hasFlash = cameraController.hasTorch()
+                        minZoom = cameraController.minZoom()
+                        maxZoom = cameraController.maxZoom()
                     }
                 },
                 size = 44,
@@ -462,7 +549,7 @@ fun StudioScreen(
                 )
                 Spacer(Modifier.height(6.dp))
                 Text(
-                    "Appuie sur l'icône réglages pour refermer.",
+                    "Pince à deux doigts sur l'image pour zoomer · icône réglages pour refermer.",
                     style = MaterialTheme.typography.labelSmall,
                     color = TextSecondary
                 )
@@ -518,6 +605,49 @@ fun StudioScreen(
                 .padding(horizontal = 12.dp, vertical = 8.dp),
             horizontalAlignment = Alignment.CenterHorizontally
         ) {
+            // Zoom : glissière discrète (1x → zoom max de l'objectif) + retour rapide à 1x.
+            if (hasCamera && maxZoom > minZoom + 0.01f) {
+                Row(
+                    modifier = Modifier
+                        .fillMaxWidth()
+                        .clip(RoundedCornerShape(50))
+                        .background(Color.Black.copy(alpha = 0.45f))
+                        .padding(horizontal = 12.dp, vertical = 2.dp),
+                    verticalAlignment = Alignment.CenterVertically
+                ) {
+                    Icon(
+                        Icons.Default.Tune,
+                        contentDescription = null,
+                        tint = TextSecondary.copy(alpha = 0.7f),
+                        modifier = Modifier.size(14.dp)
+                    )
+                    Spacer(Modifier.width(8.dp))
+                    Slider(
+                        value = zoomRatio.coerceIn(minZoom, maxZoom),
+                        onValueChange = { v -> cameraController.setZoomRatio(v)?.let { zoomRatio = it } },
+                        valueRange = minZoom..maxZoom,
+                        colors = SliderDefaults.colors(
+                            thumbColor = Accent,
+                            activeTrackColor = Accent,
+                            inactiveTrackColor = Color.White.copy(alpha = 0.3f)
+                        ),
+                        modifier = Modifier
+                            .weight(1f)
+                            .height(28.dp)
+                    )
+                    Spacer(Modifier.width(8.dp))
+                    Text(
+                        text = String.format(java.util.Locale.FRANCE, "%.1f×", zoomRatio),
+                        style = MaterialTheme.typography.labelMedium,
+                        color = if (zoomRatio > 1.02f) Accent else TextSecondary,
+                        modifier = Modifier.clickable {
+                            cameraController.resetZoom()?.let { zoomRatio = it }
+                        }
+                    )
+                }
+                Spacer(Modifier.height(6.dp))
+            }
+
             Text(
                 text = if (promptState.total == 0) "" else
                     "Phrase ${promptState.humanIndex} sur ${promptState.total}",

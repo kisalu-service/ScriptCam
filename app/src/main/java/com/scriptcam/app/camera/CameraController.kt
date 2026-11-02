@@ -7,10 +7,8 @@ import android.net.Uri
 import android.util.Log
 import androidx.camera.core.Camera
 import androidx.camera.core.CameraSelector
-import androidx.camera.core.CameraEffect
 import androidx.camera.core.ImageCapture
 import androidx.camera.core.ImageCaptureException
-import androidx.camera.core.SurfaceProcessor
 import androidx.camera.core.ExperimentalMirrorMode
 import androidx.camera.core.MirrorMode
 import androidx.camera.core.Preview
@@ -205,15 +203,6 @@ class CameraController(
                 .setCaptureMode(ImageCapture.CAPTURE_MODE_MAXIMIZE_QUALITY)
                 .build()
 
-            // Un effet « processeur » (même vide) force le moteur caméra à passer par une
-            // surface GPU où les paramètres 3A sont appliqués : c'est ce qui permet au flash
-            // photo d'agir sur la luminosité de l'image capturée.
-            val effect = CameraEffect(
-                CameraEffect.PREVIEW or CameraEffect.VIDEO_CAPTURE or CameraEffect.IMAGE_CAPTURE,
-                ContextCompat.getMainExecutor(context),
-                SurfaceProcessor { _, _, _, _ -> }
-            )
-
             camera = provider.bindToLifecycle(
                 lifecycleOwner,
                 selector,
@@ -221,7 +210,6 @@ class CameraController(
                     .addUseCase(preview!!)
                     .addUseCase(videoCapture!!)
                     .addUseCase(imageCapture!!)
-                    .addEffect(effect)
                     .build()
             )
             applyExposureLock(exposureSteps)

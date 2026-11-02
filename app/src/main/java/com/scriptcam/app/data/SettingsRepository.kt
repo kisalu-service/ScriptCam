@@ -64,6 +64,8 @@ class SettingsRepository(private val context: Context) {
         val orientation = stringPreferencesKey("orientation")
         val frontCamera = booleanPreferencesKey("front_camera")
         val saveToGallery = booleanPreferencesKey("save_to_gallery")
+        val lowLight = booleanPreferencesKey("low_light_mode")
+        val exposure = intPreferencesKey("exposure_steps")
     }
 
     val settings: Flow<PromptSettings> = context.dataStore.data

@@ -1,0 +1,9 @@
+<?xml version="1.0" encoding="utf-8"?>
+<paths>
+    <!-- Vidéos partagées : cache interne exposé temporairement via FileProvider -->
+    <cache-path name="partage" path="partage/" />
+    <files-path name="gallerie" path="videos/" />
+    <!-- Android 9 et antérieur : vidéos écrites dans Movies/ScriptCam du stockage externe privé -->
+    <external-files-path name="films" path="Movies/ScriptCam/" />
+    <external-files-path name="films_externe" path="ScriptCam/" />
+</paths>

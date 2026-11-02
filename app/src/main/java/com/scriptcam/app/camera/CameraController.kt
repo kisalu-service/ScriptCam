@@ -25,6 +25,7 @@ import androidx.camera.video.VideoCapture
 import androidx.camera.video.VideoRecordEvent
 import androidx.camera.view.PreviewView
 import androidx.camera.camera2.interop.Camera2CameraInfo
+import androidx.camera.camera2.interop.Camera2Interop
 import androidx.camera.camera2.interop.ExperimentalCamera2Interop
 import androidx.core.content.ContextCompat
 import androidx.lifecycle.LifecycleOwner
@@ -337,7 +338,7 @@ class CameraController(
      * `SENSOR_EXPOSURE_TIME` quand l'utilisateur choisit une pose longue.
      */
     @OptIn(ExperimentalCamera2Interop::class)
-    private fun applyExposureControls(builder: androidx.camera.core.ExtendableBuilder<*>) {
+    private fun <B : androidx.camera.core.ExtendableBuilder<B>> applyExposureControls(builder: B) {
         runCatching {
             val extender = Camera2Interop.Extender(builder)
             val exposure = manualExposureNs

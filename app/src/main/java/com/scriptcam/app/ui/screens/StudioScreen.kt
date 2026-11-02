@@ -91,6 +91,7 @@ import com.scriptcam.app.prompt.PromptState
 import com.scriptcam.app.ui.AppViewModel
 import com.scriptcam.app.ui.components.PrompterOverlay
 import com.scriptcam.app.ui.components.RoundIconButton
+import com.scriptcam.app.ui.components.SegmentedSelector
 import com.scriptcam.app.ui.components.SettingSlider
 import com.scriptcam.app.ui.theme.Accent
 import com.scriptcam.app.ui.theme.Ink700

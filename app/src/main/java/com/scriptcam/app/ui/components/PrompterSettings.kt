@@ -192,6 +192,12 @@ fun PrompterSettingsSection(
                     onCheckedChange = { v -> onChange { it.copy(useFrontCameraByDefault = v) } }
                 )
                 ToggleRow(
+                    label = "Mode basse lumière (720p)",
+                    description = "Capteur plus sensible : image nettement plus lumineuse de nuit, résolution réduite",
+                    checked = settings.lowLightMode,
+                    onCheckedChange = { v -> onChange { it.copy(lowLightMode = v) } }
+                )
+                ToggleRow(
                     label = "Enregistrer dans la galerie",
                     description = "Les vidéos vont dans Movies/ScriptCam",
                     checked = settings.saveToGallery,

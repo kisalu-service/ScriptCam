@@ -45,6 +45,8 @@ import androidx.compose.material.icons.filled.Stop
 import androidx.compose.material.icons.filled.Tune
 import androidx.compose.material.icons.outlined.FlashOff
 import androidx.compose.material.icons.outlined.FlashOn
+import androidx.compose.material.icons.outlined.LightMode
+import androidx.compose.material.icons.outlined.PhotoCamera
 import androidx.compose.material3.CircularProgressIndicator
 import androidx.compose.material3.Icon
 import androidx.compose.material3.MaterialTheme
@@ -198,9 +200,15 @@ fun StudioScreen(
     var maxZoom by remember { mutableStateOf(1f) }
     var torchOn by remember { mutableStateOf(false) }
     var hasFlash by remember { mutableStateOf(false) }
+    var lowLight by remember { mutableStateOf(settings.lowLightMode) }
+    var exposureSteps by remember { mutableStateOf(settings.exposureSteps) }
+    var exposureRange by remember { mutableStateOf(0..0) }
 
     DisposableEffect(hasCamera) {
         if (hasCamera) {
+            // Le mode basse lumière (720p) doit être connu AVANT la liaison : il change la
+            // résolution demandée au capteur.
+            cameraController.setLowLightMode(settings.lowLightMode)
             cameraController.bind(
                 previewView = previewView,
                 preferFront = session.useFrontCamera,
@@ -226,8 +234,17 @@ fun StudioScreen(
             zoomRatio = cameraController.currentZoom()
             hasFlash = cameraController.hasTorch()
             torchOn = cameraController.torchEnabled
+            lowLight = cameraController.isLowLightMode()
+            exposureRange = cameraController.exposureIndexRange()
             attempts++
-            if (maxZoom > minZoom + 0.01f || hasFlash) break
+            if (maxZoom > minZoom + 0.01f || hasFlash || exposureRange.last > 0) break
+        }
+    }
+
+    // Applique la compensation d'exposition mémorisée dès que la caméra est prête.
+    LaunchedEffect(exposureRange, hasCamera) {
+        if (hasCamera && exposureRange.last > exposureRange.first) {
+            cameraController.setExposureCompensation(exposureSteps)?.let { exposureSteps = it }
         }
     }
 
@@ -271,6 +288,17 @@ fun StudioScreen(
         cameraController.startRecording(session.scriptTitle.ifBlank { null }, ::handleCameraEvent)
         phase = RecPhase.RECORDING
         elapsedMs = 0L
+    }
+
+    /** Photo lumineuse de secours (utile quand la vidéo sort trop sombre). */
+    fun takeBrightPhoto() {
+        cameraController.capturePhoto { path, error ->
+            if (path != null) {
+                infoMessage = "Photo lumineuse enregistrée (galerie : Pictures/ScriptCam)."
+            } else {
+                infoMessage = error ?: "Photo impossible."
+            }
+        }
     }
 
     fun requestRecording() {
@@ -448,6 +476,31 @@ fun StudioScreen(
 
             RoundIconButton(
                 onClick = {
+                    val enabled = !lowLight
+                    if (cameraController.setLowLightMode(enabled) { evt ->
+                            if (evt is CameraEvent.Info) infoMessage = evt.message
+                        }) {
+                        lowLight = enabled
+                        viewModel.updateSettings { it.copy(lowLightMode = enabled) }
+                        infoMessage = if (enabled) {
+                            "Mode basse lumière : 720p, image plus lumineuse."
+                        } else {
+                            "Mode qualité : retour au 1080p."
+                        }
+                    }
+                },
+                size = 44,
+                background = if (lowLight) Accent.copy(alpha = 0.9f) else Color.Black.copy(alpha = 0.5f)
+            ) {
+                Icon(
+                    imageVector = Icons.Outlined.LightMode,
+                    contentDescription = "Mode basse lumière",
+                    tint = if (lowLight) Color.Black else TextPrimary
+                )
+            }
+            Spacer(Modifier.width(8.dp))
+            RoundIconButton(
+                onClick = {
                     val newState = cameraController.toggleTorch()
                     when (newState) {
                         null -> infoMessage = "Lumière indisponible sur cette caméra."
@@ -542,6 +595,21 @@ fun StudioScreen(
                     valueLabel = "${(settings.backgroundAlpha * 100).toInt()} %",
                     onValueChange = { v -> viewModel.updateSettings { it.copy(backgroundAlpha = v) } }
                 )
+                if (exposureRange.last > exposureRange.first) {
+                    SettingSlider(
+                        label = "Luminosité de l'image",
+                        value = exposureSteps.toFloat(),
+                        valueRange = exposureRange.first.toFloat()..exposureRange.last.toFloat(),
+                        valueLabel = if (exposureSteps == 0) "Auto" else
+                            String.format(java.util.Locale.FRANCE, "%+d EV", exposureSteps),
+                        onValueChange = { v ->
+                            cameraController.setExposureCompensation(v.toInt())?.let { applied ->
+                                exposureSteps = applied
+                                viewModel.updateSettings { it.copy(exposureSteps = applied) }
+                            }
+                        }
+                    )
+                }
                 SettingSlider(
                     label = "Rythme de lecture",
                     value = settings.wordsPerMinute.toFloat(),
@@ -550,6 +618,12 @@ fun StudioScreen(
                     onValueChange = { v -> viewModel.updateSettings { it.copy(wordsPerMinute = v.toInt()) } }
                 )
                 Spacer(Modifier.height(6.dp))
+                Text(
+                    "Faible luminosité : active le mode basse lumière (720p) plutôt que de monter la luminosité à fond, qui introduit du grain et du flou.",
+                    style = MaterialTheme.typography.labelSmall,
+                    color = TextSecondary
+                )
+                Spacer(Modifier.height(4.dp))
                 Text(
                     "Pince à deux doigts sur l'image pour zoomer · icône réglages pour refermer.",
                     style = MaterialTheme.typography.labelSmall,
@@ -698,6 +772,13 @@ fun StudioScreen(
                 }
                 RoundIconButton(onClick = { engine.restart(autoPlay = true) }) {
                     Icon(Icons.Default.Replay, contentDescription = "Recommencer", tint = TextPrimary)
+                }
+                RoundIconButton(onClick = { takeBrightPhoto() }) {
+                    Icon(
+                        Icons.Outlined.PhotoCamera,
+                        contentDescription = "Prendre une photo lumineuse",
+                        tint = TextPrimary
+                    )
                 }
             }
 

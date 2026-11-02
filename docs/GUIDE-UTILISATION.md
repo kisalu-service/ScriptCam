@@ -41,15 +41,25 @@ Astuce : tu peux envoyer un script depuis une autre application (sélection → 
 - **Recommencer** relance le studio avec le même texte.
 - **Supprimer** retire la vidéo de l'application et de la galerie.
 
-## 5. Mon image est-elle inversée ?
+## 5. La vidéo est sombre (tournage de nuit ou en intérieur)
+Dans l'ordre :
+1. Appuie sur l'icône **soleil** en haut du studio : **mode basse lumière** (720p). C'est le
+   réglage qui change le plus la luminosité.
+2. Ouvre les réglages rapides (⚙) et monte **Luminosité de l'image** (+1 EV, puis +2). Au-delà,
+   l'image devient granuleuse et les mouvements flous.
+3. Éclaire la scène : une fenêtre, une lampe, ou la **torche** si tu filmes avec la caméra arrière.
+4. En dernier recours, l'icône **appareil photo** prend une photo lumineuse (elle peut exposer
+   beaucoup plus longtemps que la vidéo).
+
+## 6. Mon image est-elle inversée ?
 L'aperçu de la caméra frontale est un miroir (comme quand tu te regardes dans un miroir), et la
 vidéo enregistrée est désormais **identique à cet aperçu** : ce que tu vois est ce que tu obtiens.
 
-## 6. Où sont mes vidéos ?
+## 7. Où sont mes vidéos ?
 Galerie du téléphone → album **Movies/ScriptCam**. Elles restent aussi listées dans
 **Bibliothèque → Vidéos** avec les actions lecture / partage / suppression.
 
-## 7. Réglages utiles
+## 8. Réglages utiles
 - **Position verticale** : place le texte au-dessus de ton visage (0 % = haut de l'écran).
 - **Transparence du fond** : 55 % par défaut ; monte-la si le fond est clair.
 - **Texte en miroir** : pour un téléprompteur physique à miroir semi-réfléchissant.

@@ -57,6 +57,22 @@ rebours 0/3/5 s, écran maintenu allumé.
     Cette lumière d'écran n'apparaît pas dans le fichier vidéo.
 - **Orientation cohérente** : la vidéo est enregistrée **en miroir pour la caméra frontale**
   (`MirrorMode.MIRROR_MODE_ON_FRONT_ONLY`), donc identique à ce que tu vois pendant le tournage.
+
+### Faible luminosité (vidéo sombre de nuit)
+Trois leviers, du plus efficace au plus risqué :
+1. **Mode basse lumière** (bouton soleil dans le studio, ou Paramètres) : bascule l'enregistrement
+   en **720p**. Un capteur qui produit moins de pixels « binne » ses photosites et expose plus
+   longtemps → image nettement plus lumineuse, résolution réduite. C'est le levier le plus utile
+   sur un téléphone de gamme modeste.
+2. **Luminosité de l'image** (réglages rapides du studio) : compensation d'exposition CameraX
+   (`setExposureCompensationIndex`), de « Auto » jusqu'à +2 EV environ, bornée à la plage réelle
+   du capteur. Éclaircit, mais allonge l'exposition → risque de flou de mouvement et de grain.
+3. **Photo lumineuse** (icône appareil photo) : prend une image fixe qui peut exposer beaucoup
+   plus longtemps que 30 images/seconde. La photo et la vidéo restent deux fichiers distincts ;
+   les fusionner demanderait un transcodage complet (Media3 Transformer), volontairement exclu
+   pour garder l'application légère.
+- Le **verrouillage du framerate** (30/30 plutôt que 15-30) laisse aussi le capteur allonger son
+  temps d'exposition en basse lumière.
 - Enregistrement vidéo + audio via CameraX, **1080p (FHD) demandé avec repli automatique** vers la
   meilleure qualité disponible (téléphones de gamme modeste).
 - Compte à rebours 3 s avant le départ, chronomètre, pause / reprise, arrêt.
@@ -234,11 +250,15 @@ publication galerie spécifique Android 7-9).
 4. **Torche frontale** : dépend du matériel. Sur la plupart des téléphones il n'existe aucun
    flash frontal ; la lampe d'appoint écran est alors proposée (elle éclaire mais n'est pas
    enregistrée). Le zoom, lui, est numérique au-delà de l'objectif natif.
-5. **Format 9:16** : l'orientation verticale est forcée dans le studio ; le fichier produit est
+5. **Basse lumière** : la luminosité d'une vidéo dépend d'abord du capteur. Sur un téléphone
+   d'entrée de gamme, le mode 720p et l'exposition +EV améliorent la situation mais ne
+   remplacent pas un éclairage (fenêtre, lampe, ring light). La torche arrière aide réellement ;
+   la lampe d'appoint frontale éclaire la scène, pas le capteur.
+6. **Format 9:16** : l'orientation verticale est forcée dans le studio ; le fichier produit est
    celui du capteur dans cette orientation (1080 × 1920 sur la plupart des téléphones). Pour un
    recadrage strict 9:16 sur tous les appareils, il faudrait un transcodage (MediaCodec/Media3
    Transformer) — non inclus ici pour garder l'app légère et l'enregistrement instantané.
-6. **Android 7-9** : l'enregistrement passe par un fichier privé publié dans la galerie ; le
+7. **Android 7-9** : l'enregistrement passe par un fichier privé publié dans la galerie ; le
    partage utilise FileProvider.
 
 ---

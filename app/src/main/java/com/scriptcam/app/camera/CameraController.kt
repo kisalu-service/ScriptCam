@@ -7,9 +7,14 @@ import android.net.Uri
 import android.util.Log
 import androidx.camera.core.Camera
 import androidx.camera.core.CameraSelector
+import androidx.camera.core.CameraEffect
+import androidx.camera.core.ImageCapture
+import androidx.camera.core.ImageCaptureException
+import androidx.camera.core.SurfaceProcessor
 import androidx.camera.core.ExperimentalMirrorMode
 import androidx.camera.core.MirrorMode
 import androidx.camera.core.Preview
+import androidx.camera.core.UseCaseGroup
 import androidx.camera.lifecycle.ProcessCameraProvider
 import androidx.camera.video.FallbackStrategy
 import androidx.camera.video.FileOutputOptions
@@ -71,6 +76,9 @@ class CameraController(
     /** Instance CameraX liée : indispensable pour piloter le zoom et la torche. */
     private var camera: Camera? = null
 
+    /** Capture d'image fixe — sert au « flash photo » en basse lumière. */
+    private var imageCapture: ImageCapture? = null
+
     /** Zoom courant (1.0 = objectif natif). */
     var zoomRatio: Float = 1f
         private set
@@ -78,6 +86,27 @@ class CameraController(
     /** Torche allumée (caméra arrière) ou lampe d'appoint (caméra frontale). */
     var torchEnabled: Boolean = false
         private set
+
+    /**
+     * Mode basse lumière : privilégie le 720p au 1080p.
+     * Un capteur qui sort moins de pixels expose plus longtemps et « binne » ses photosites :
+     * l'image est nettement plus lumineuse en faible éclairage, au prix de la résolution.
+     */
+    var lowLightMode: Boolean = false
+        private set
+
+    /** Compensation d'exposition en cours (en « crans » EV), 0 = exposition automatique neutre. */
+    var exposureSteps: Int = 0
+        private set
+
+    /** Mémorise les paramètres de liaison pour pouvoir relier à nouveau (changement de FPS). */
+    private data class BindRequest(
+        val previewView: PreviewView,
+        val preferFront: Boolean,
+        val mirrorPreview: Boolean,
+        val onEvent: (CameraEvent) -> Unit
+    )
+    private var lastBind: BindRequest? = null
 
     var recordingState: RecordingState = RecordingState.IDLE
         private set
@@ -103,6 +132,7 @@ class CameraController(
         mirrorPreview: Boolean,
         onEvent: (CameraEvent) -> Unit
     ) {
+        lastBind = BindRequest(previewView, preferFront, mirrorPreview, onEvent)
         val future = ProcessCameraProvider.getInstance(context)
         future.addListener({
             try {
@@ -138,14 +168,23 @@ class CameraController(
 
             val selector = CameraSelector.Builder().requireLensFacing(lensFacing).build()
 
-            preview = Preview.Builder().build().also {
-                it.surfaceProvider = previewView.surfaceProvider
-            }
+            // FPS verrouillé : en 30 i/s constant, l'obturateur ne peut pas descendre assez
+            // bas pour la nuit. Un verrou à 30/30 (ou 24/24) laisse le capteur allonger
+            // son temps d'exposition quand la scène est sombre.
+            val fpsRange = pickFpsRange()
+            preview = Preview.Builder()
+                .apply { if (fpsRange != null) setTargetFrameRate(fpsRange) }
+                .build().also {
+                    it.surfaceProvider = previewView.surfaceProvider
+                }
 
-            val qualitySelector = QualitySelector.from(
-                Quality.FHD,
-                FallbackStrategy.lowerQualityOrHigherThan(Quality.FHD)
-            )
+            // En basse lumière on descend en 720p : moins de pixels = exposition plus longue
+            // = image sensiblement plus lumineuse. Sinon FHD avec repli automatique.
+            val qualitySelector = if (lowLightMode) {
+                QualitySelector.from(Quality.HD, FallbackStrategy.higherQualityOrLowerThan(Quality.HD))
+            } else {
+                QualitySelector.from(Quality.FHD, FallbackStrategy.lowerQualityOrHigherThan(Quality.FHD))
+            }
             val recorder = Recorder.Builder()
                 .setQualitySelector(qualitySelector)
                 .build()
@@ -155,13 +194,37 @@ class CameraController(
             // MIRROR_MODE_ON_FRONT_ONLY aligne le fichier sur l'aperçu (recommandation Google).
             videoCapture = VideoCapture.Builder(recorder)
                 .setMirrorMode(MirrorMode.MIRROR_MODE_ON_FRONT_ONLY)
+                .apply { if (fpsRange != null) setTargetFrameRate(fpsRange) }
                 .build()
 
             // PreviewView applique déjà le miroir de la caméra frontale : on ne le retourne
             // plus manuellement, sinon l'aperçu et la vidéo repartaient en sens opposés.
             previewView.scaleX = 1f
 
-            camera = provider.bindToLifecycle(lifecycleOwner, selector, preview, videoCapture)
+            imageCapture = ImageCapture.Builder()
+                .setCaptureMode(ImageCapture.CAPTURE_MODE_MAXIMIZE_QUALITY)
+                .build()
+
+            // Un effet « processeur » (même vide) force le moteur caméra à passer par une
+            // surface GPU où les paramètres 3A sont appliqués : c'est ce qui permet au flash
+            // photo d'agir sur la luminosité de l'image capturée.
+            val effect = CameraEffect(
+                CameraEffect.PREVIEW or CameraEffect.VIDEO_CAPTURE or CameraEffect.IMAGE_CAPTURE,
+                ContextCompat.getMainExecutor(context),
+                SurfaceProcessor { _, _, _, _ -> }
+            )
+
+            camera = provider.bindToLifecycle(
+                lifecycleOwner,
+                selector,
+                UseCaseGroup.Builder()
+                    .addUseCase(preview!!)
+                    .addUseCase(videoCapture!!)
+                    .addUseCase(imageCapture!!)
+                    .addEffect(effect)
+                    .build()
+            )
+            applyExposureLock(exposureSteps)
             // Le zoom et la torche sont réinitialisés à chaque (re)liaison.
             camera?.let { cam ->
                 if (cam.cameraInfo.hasFlashUnit()) {
@@ -203,6 +266,129 @@ class CameraController(
         torchEnabled = false
         bindInternal(previewView, mirrorPreview, onEvent)
         return target
+    }
+
+    // ------------------------------------------------- Exposition (luminosité)
+
+    /** Vrai si l'appareil accepte une compensation d'exposition. */
+    fun isExposureCompensationSupported(): Boolean = runCatching {
+        camera?.cameraInfo?.exposureState?.isExposureCompensationSupported == true
+    }.getOrDefault(false)
+
+    /** Plage de compensation disponible (en crans), par exemple -6..+6. */
+    fun exposureIndexRange(): IntRange = runCatching {
+        val state = camera?.cameraInfo?.exposureState ?: return@runCatching 0..0
+        val range = state.exposureCompensationRange
+        (range.lower)..(range.upper)
+    }.getOrDefault(0..0)
+
+    /**
+     * Règle la luminosité de l'image en direct (et donc de la vidéo enregistrée).
+     *
+     * ⚠️ À utiliser en dernier recours : +2 EV éclaircit, mais allonge le temps d'exposition
+     * ou pousse le gain → risque de flou de mouvement et de bruit. Le mode basse lumière
+     * (720p) est souvent un meilleur premier réflexe.
+     */
+    fun setExposureCompensation(steps: Int): Int? {
+        val cam = camera ?: return null
+        val clamped = steps.coerceIn(exposureIndexRange())
+        return runCatching {
+            cam.cameraControl.setExposureCompensationIndex(clamped)
+            exposureSteps = clamped
+            clamped
+        }.getOrNull()
+    }
+
+    private fun applyExposureLock(steps: Int) {
+        runCatching {
+            val cam = camera ?: return@runCatching
+            if (cam.cameraInfo.exposureState.isExposureCompensationSupported) {
+                cam.cameraControl.setExposureCompensationIndex(steps.coerceIn(exposureIndexRange()))
+            }
+        }
+    }
+
+    // ------------------------------------------------------- Mode basse lumière
+
+    /** Valeur courante du mode basse lumière. */
+    fun isLowLightMode(): Boolean = lowLightMode
+
+    /**
+     * Active/désactive le mode basse lumière. La liaison caméra est refaite pour appliquer
+     * immédiatement le changement de résolution (impossible pendant un enregistrement).
+     * @return true si l'état a été appliqué.
+     */
+    fun setLowLightMode(enabled: Boolean, onEvent: (CameraEvent) -> Unit = {}): Boolean {
+        if (lowLightMode == enabled) return true
+        if (recordingState == RecordingState.RECORDING || recordingState == RecordingState.PAUSED) {
+            onEvent(CameraEvent.Info("Impossible de changer la résolution pendant l'enregistrement."))
+            return false
+        }
+        lowLightMode = enabled
+        val request = lastBind
+        if (request != null) {
+            bindInternal(request.previewView, request.mirrorPreview, request.onEvent)
+        }
+        return true
+    }
+
+    /** Plage d'images la plus « lente » encore fluide, pour laisser le capteur exposer. */
+    private fun pickFpsRange(): android.util.Range<Int>? = runCatching {
+        val info = camera?.cameraInfo ?: return@runCatching null
+        val ranges = info.supportedFrameRateRanges
+        // Priorité : 30/30 (fluide, sans double exposition), sinon 24/24, sinon le max fixe.
+        val fixed = ranges.filter { it.lower == it.upper }
+        fixed.firstOrNull { it.upper == 30 }
+            ?: fixed.firstOrNull { it.upper == 24 }
+            ?: fixed.minByOrNull { it.upper }
+    }.getOrNull()
+
+    // ------------------------------------------------ Flash photo (basse lumière)
+
+    /**
+     * Capture une image fixe pendant l'enregistrement.
+     *
+     * Pourquoi : en très faible éclairage, une image fixe peut exposer bien plus longtemps
+     * qu'une image de vidéo (30 i/s). On peut donc « prendre une photo lumineuse » puis
+     * repartir de cette image pour la suite du montage.
+     *
+     * Limite assumée : la photo et la vidéo sont deux fichiers distincts. Fusionner la photo
+     * dans la piste vidéo exigerait un transcodage complet (Media3 Transformer), qui n'est
+     * pas inclus ici. Cette fonction sert donc de secours : elle produit une image nette et
+     * lumineuse au lieu d'une vidéo sombre.
+     *
+     * @return le chemin du fichier image, ou null en cas d'échec.
+     */
+    fun capturePhoto(onResult: (String?, String?) -> Unit) {
+        val capture = imageCapture ?: run {
+            onResult(null, "Capture photo indisponible.")
+            return
+        }
+        val directory = File(
+            context.getExternalFilesDir(Environment.DIRECTORY_PICTURES) ?: context.filesDir,
+            "ScriptCam"
+        ).apply { if (!exists()) mkdirs() }
+        val file = File(directory, "ScriptCam_" + System.currentTimeMillis() + ".jpg")
+        val options = ImageCapture.OutputFileOptions.Builder(file).build()
+        capture.takePicture(
+            options,
+            ContextCompat.getMainExecutor(context),
+            object : ImageCapture.OnImageSavedCallback {
+                override fun onImageSaved(output: ImageCapture.OutputFileResults) {
+                    runCatching {
+                        android.media.MediaScannerConnection.scanFile(
+                            context, arrayOf(file.absolutePath), arrayOf("image/jpeg"), null
+                        )
+                    }
+                    onResult(file.absolutePath, null)
+                }
+
+                override fun onError(exception: ImageCaptureException) {
+                    Log.e(TAG, "Échec de la capture photo", exception)
+                    onResult(null, "La photo n'a pas pu être prise.")
+                }
+            }
+        )
     }
 
     // ------------------------------------------------------------- Zoom

@@ -37,7 +37,11 @@ data class PromptSettings(
     val keepScreenOn: Boolean = true,
     val orientation: StudioOrientation = StudioOrientation.AUTO,
     val useFrontCameraByDefault: Boolean = true,
-    val saveToGallery: Boolean = true
+    val saveToGallery: Boolean = true,
+    /** Tourne en 720p (capteur plus sensible) : recommandé en faible éclairage. */
+    val lowLightMode: Boolean = false,
+    /** Compensation d'exposition appliquée au démarrage (en crans EV). */
+    val exposureSteps: Int = 0
 )
 
 private val Context.dataStore: DataStore<Preferences> by preferencesDataStore(name = "scriptcam_settings")
@@ -83,7 +87,9 @@ class SettingsRepository(private val context: Context) {
                     StudioOrientation.entries.firstOrNull { it.name == name }
                 } ?: defaults.orientation,
                 useFrontCameraByDefault = p[Keys.frontCamera] ?: defaults.useFrontCameraByDefault,
-                saveToGallery = p[Keys.saveToGallery] ?: defaults.saveToGallery
+                saveToGallery = p[Keys.saveToGallery] ?: defaults.saveToGallery,
+                lowLightMode = p[Keys.lowLight] ?: defaults.lowLightMode,
+                exposureSteps = p[Keys.exposure] ?: defaults.exposureSteps
             )
         }
 
@@ -105,7 +111,9 @@ class SettingsRepository(private val context: Context) {
                 orientation = prefs[Keys.orientation]?.let { n -> StudioOrientation.entries.firstOrNull { it.name == n } }
                     ?: StudioOrientation.AUTO,
                 useFrontCameraByDefault = prefs[Keys.frontCamera] ?: true,
-                saveToGallery = prefs[Keys.saveToGallery] ?: true
+                saveToGallery = prefs[Keys.saveToGallery] ?: true,
+                lowLightMode = prefs[Keys.lowLight] ?: false,
+                exposureSteps = prefs[Keys.exposure] ?: 0
             )
             val next = transform(current)
             prefs[Keys.fontSize] = next.fontSizeSp
@@ -123,6 +131,8 @@ class SettingsRepository(private val context: Context) {
             prefs[Keys.orientation] = next.orientation.name
             prefs[Keys.frontCamera] = next.useFrontCameraByDefault
             prefs[Keys.saveToGallery] = next.saveToGallery
+            prefs[Keys.lowLight] = next.lowLightMode
+            prefs[Keys.exposure] = next.exposureSteps
         }
     }
 

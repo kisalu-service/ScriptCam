@@ -7,13 +7,13 @@ import android.net.Uri
 import android.util.Log
 import androidx.camera.core.Camera
 import androidx.camera.core.CameraSelector
+import androidx.camera.core.ExperimentalMirrorMode
+import androidx.camera.core.MirrorMode
 import androidx.camera.core.Preview
-import androidx.camera.core.ZoomState
 import androidx.camera.lifecycle.ProcessCameraProvider
 import androidx.camera.video.FallbackStrategy
 import androidx.camera.video.FileOutputOptions
 import androidx.camera.video.MediaStoreOutputOptions
-import androidx.camera.video.MirrorMode
 import androidx.camera.video.Quality
 import androidx.camera.video.QualitySelector
 import androidx.camera.video.Recorder
@@ -126,6 +126,7 @@ class CameraController(
         }, ContextCompat.getMainExecutor(context))
     }
 
+    @OptIn(ExperimentalMirrorMode::class)
     private fun bindInternal(
         previewView: PreviewView,
         mirrorPreview: Boolean,
@@ -217,9 +218,6 @@ class CameraController(
     /** Zoom courant exposé par CameraX (source de vérité après un pincement). */
     fun currentZoom(): Float = runCatching { camera?.cameraInfo?.zoomState?.value?.zoomRatio ?: zoomRatio }
         .getOrDefault(zoomRatio)
-
-    fun zoomStateFlow(): kotlinx.coroutines.flow.StateFlow<ZoomState?>? =
-        runCatching { camera?.cameraInfo?.zoomState }.getOrNull()
 
     /**
      * Applique un facteur de zoom, borné aux capacités de l'objectif.

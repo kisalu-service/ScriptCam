@@ -218,13 +218,15 @@ fun StudioScreen(
     // jusqu'à obtenir une réponse exploitable (utile sur les appareils lents).
     LaunchedEffect(hasCamera) {
         if (!hasCamera) return@LaunchedEffect
-        repeat(12) {
+        var attempts = 0
+        while (attempts < 12) {
             delay(300)
             minZoom = cameraController.minZoom()
             maxZoom = cameraController.maxZoom()
             zoomRatio = cameraController.currentZoom()
             hasFlash = cameraController.hasTorch()
             torchOn = cameraController.torchEnabled
+            attempts++
             if (maxZoom > minZoom + 0.01f || hasFlash) break
         }
     }
